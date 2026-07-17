@@ -13,6 +13,8 @@ def calc_rate(model_config: Any, elapsed_s: float = 0,
               packet_size: int = 1500, rng: random.Random = None) -> float:
     """
     根据模型配置和已运行时间，计算当前瞬时速率 (Mbps)。
+    目标速率	traffic_models.py	我想发多快	        发送端
+    实际速率	statistics.py	    实际发了/收了多少	接收端 + 发送端
 
     参数:
         model_config: 模型 dict 或字符串 (如 "cbr" 或 {"type":"cbr"})
@@ -61,6 +63,7 @@ def calc_interval(model_config: Any, packet_size: int,
     bits_per_packet = packet_size * 8
     return bits_per_packet / (rate_mbps * 1_000_000)
 
+#  以下为六种模型的具体实现，均为内部函数，外部请使用 calc_rate() 接口。 
 # ── CBR: 恒定速率 ─────────────────────────────────────
 
 def _calc_cbr(config: dict) -> float:

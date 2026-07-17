@@ -11,27 +11,14 @@
 import math
 from typing import List, Set
 
-MAX_LATENCY_SAMPLES = 10000
+MAX_LATENCY_SAMPLES = 10000 #最多保留10000个时延样本用于分位数统计
 
 # ── 时延统计 ──────────────────────────────────────────
 
 def compute_latency_stats(samples: List[float]) -> dict:
     """
-    计算时延统计指标。
-
-    参数:
-        samples: 单向时延样本列表 (单位 μs)
-
-    返回:
-        {
-            "count": int,
-            "avg_us": float,
-            "min_us": float,
-            "max_us": float,
-            "p95_us": float,
-            "p99_us": float,
-        }
-        样本为空时返回全 0。
+    计算时延总体统计（样本数、平均、最小、最大、95/99 百分位）。
+    若样本为空返回全 0；对样本做排序用于 min/max/percentile，平均使用原始样本和长度计算。
     """
     if not samples:
         return {
@@ -58,13 +45,8 @@ def compute_latency_stats(samples: List[float]) -> dict:
 def compute_jitter(samples: List[float]) -> dict:
     """
     计算抖动：相邻有效时延样本差值的绝对值。
-
-    返回:
-        {
-            "avg_us": float,
-            "max_us": float,
-        }
-        样本不足 2 时返回全 0。
+    返回平均抖动和最大抖动
+    样本不足 2 时返回全 0。
     """
     if len(samples) < 2:
         return {"avg_us": 0.0, "max_us": 0.0}
@@ -75,6 +57,7 @@ def compute_jitter(samples: List[float]) -> dict:
         "max_us": max(diffs),
     }
 
+#   工具函数，辅助上面计算指标
 def _percentile(sorted_data: List[float], p: int) -> float:
     """计算百分位数 (线性插值)"""
     n = len(sorted_data)
@@ -88,8 +71,8 @@ def _percentile(sorted_data: List[float], p: int) -> float:
     frac = rank - lo
     return sorted_data[lo] * (1 - frac) + sorted_data[hi] * frac
 
-# ── 序号追踪 ──────────────────────────────────────────
 
+# 判断丢包、乱序等情况
 class SequenceTracker:
     """
     追踪报文序号，检测丢包、重复、乱序。

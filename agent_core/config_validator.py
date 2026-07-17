@@ -13,14 +13,8 @@ VALID_MODES = {"unicast", "multicast", "broadcast"}
 VALID_PAYLOAD_PATTERNS = {"counter", "zero", "random"}  # hex:... 按前缀匹配
 VALID_MODEL_TYPES = {"cbr", "poisson", "markov", "regression", "burst", "step"}
 
+#   校验 START 命令的任务配置 JSON
 def validate_task_config(config: dict) -> Tuple[bool, Optional[str]]:
-    """
-    校验 START 命令的任务配置 JSON。
-
-    返回:
-        (True, None)        校验通过
-        (False, "错误信息")  校验失败
-    """
     if not isinstance(config, dict):
         return False, "配置必须是 JSON 对象"
 
@@ -48,8 +42,9 @@ def validate_task_config(config: dict) -> Tuple[bool, Optional[str]]:
 
     return True, None
 
+#   上个函数的辅助函数，校验顶层字段
 def _validate_top_level(config: dict) -> Tuple[bool, Optional[str]]:
-    """校验顶层字段"""
+
     # duration_s: 必填, 0.1~86400
     duration = config.get("duration_s")
     if duration is None:
@@ -93,6 +88,7 @@ def _validate_top_level(config: dict) -> Tuple[bool, Optional[str]]:
 
     return True, None
 
+#   上面函数的辅助函数，校验业务流字段
 def _validate_flow(flow: dict, idx: int, top_config: dict) -> Tuple[bool, Optional[str]]:
     """校验单条 flow"""
     prefix = f"flows[{idx}]"
@@ -222,6 +218,7 @@ def _validate_flow(flow: dict, idx: int, top_config: dict) -> Tuple[bool, Option
 
     return True, None
 
+#   校验包大小相关字段，属于业务流校验的一部分
 def _validate_packet_size(flow: dict, prefix: str) -> bool:
     """校验包大小相关字段"""
     has_size = "packet_size" in flow
@@ -242,6 +239,7 @@ def _validate_packet_size(flow: dict, prefix: str) -> bool:
 
     return True
 
+#   校验业务占比：所有 sender flow 的 rate_percent 之和必须为 100
 def _validate_rate_percent(flows: list, config: dict) -> Tuple[bool, Optional[str]]:
     """校验业务占比：所有 sender flow 的 rate_percent 之和必须为 100"""
     total_rate = config.get("total_rate_mbps")
@@ -266,6 +264,8 @@ def _validate_rate_percent(flows: list, config: dict) -> Tuple[bool, Optional[st
     return True, None
 
 # ── 便捷函数 ──────────────────────────────────────────
+# 业务占比：当顶层配置 total_rate_mbps 且所有发送流配置 rate_percent 时
+#代理端按照「子流目标速率 = 总速率 × 业务占比 ÷ 100」计算 target_rate_mbps。
 
 def calculate_target_rates(flows: list, total_rate_mbps: float) -> list:
     """
