@@ -6,6 +6,23 @@
   zero       — 全零
   random     — 随机字节
   hex:...    — 十六进制串重复填充
+
+  §5.2 配置:  packet_size=200, payload_pattern="counter"
+              │
+              ▼
+         payload_len = 200 - 40 = 160   ← 为什么减 40？§9 规定头占 40 字节
+              │
+              ▼
+payload.py:  generate_payload(length=160, pattern="counter")
+              │
+              ▼
+         返回 160 字节的 counter 数据
+              │
+              ▼
+§9 格式:    [40字节头] [160字节载荷 ← 这就是 payload.py 的产物]
+              │
+              ▼
+         通过 100G 测试网络发出去
 """
 
 import os

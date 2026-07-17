@@ -13,7 +13,7 @@
   10+N~13+N    4       crc32
   14+N         1       end (0x10)
 
-数据头 (第 9 节):
+（测试数据）数据头 (第 9 节):
   40 字节固定头
 """
 
@@ -21,10 +21,11 @@ import struct
 from agent_core.crc import crc32, crc32_bytes, verify_crc
 
 # ── 常量 ──────────────────────────────────────────────
+#给定取值，保证后续文档修改方便修改
 CMD_TRAFFIC = 0x20
 PROTO_VERSION = 0x01
 FRAME_END = 0x10
-COMPAT_PREAMBLE = 0xAA
+COMPAT_PREAMBLE = 0xAA      #兼容包头
 
 HEADER_SIZE = 10        # command + version + action + flags + task_id + payload_len
 CRC_SIZE = 4
@@ -33,24 +34,21 @@ MIN_FRAME_SIZE = HEADER_SIZE + CRC_SIZE + END_SIZE   # 15 字节
 MAX_PAYLOAD_SIZE = 49152
 
 # 数据头
+# 数据部分规定的固定取值
 DATA_MAGIC = b"CTFG"
 DATA_VERSION = 0x01
 DATA_HEADER_LEN = 40
 
-# ── 控制帧打包 ────────────────────────────────────────
-
+# 打包控制帧（不含可选 0xAA 前导）
 def pack_frame(action: int, flags: int, task_id: int,
                payload: bytes = b"") -> bytes:
-    """
-    打包控制帧。payload 应为 UTF-8 JSON 字节。
-    返回完整帧 bytes，不含可选 0xAA。
-    """
+    # 帧长限制
     payload_len = len(payload)
     if payload_len > MAX_PAYLOAD_SIZE:
         raise ValueError(f"payload 超过 {MAX_PAYLOAD_SIZE} 字节")
 
     header = struct.pack(
-        "!BBBB I H",
+        "!BBBB I H",    #保证大端序
         CMD_TRAFFIC,    # command
         PROTO_VERSION,  # version
         action,         # action
@@ -60,12 +58,13 @@ def pack_frame(action: int, flags: int, task_id: int,
     )
 
     body = header + payload
-    crc = crc32_bytes(body)
+    crc = crc32_bytes(body)     #从command到payload最后1字节的CRC32；不包含可选0xAA和结束标识
     return body + crc + bytes([FRAME_END])
 
+
+# ── 控制帧打包（带可选 0xAA 前导） ─────────────────────────
 def pack_frame_with_preamble(action: int, flags: int, task_id: int,
                              payload: bytes = b"") -> bytes:
-    """打包控制帧，前加可选 0xAA 兼容包头"""
     return bytes([COMPAT_PREAMBLE]) + pack_frame(action, flags, task_id, payload)
 
 # ── 控制帧解包 ────────────────────────────────────────
@@ -106,6 +105,7 @@ def unpack_frame(data: bytes) -> dict:
 
     # 解析固定头: 10 字节
     header = data[:10]
+    # 提取参数
     command, version, action, flags, task_id, payload_len = struct.unpack(
         "!BBBB I H", header
     )
@@ -118,10 +118,10 @@ def unpack_frame(data: bytes) -> dict:
     if payload_len > MAX_PAYLOAD_SIZE:
         raise FrameError(f"payload_len 超限: {payload_len}")
 
-    # 提取 payload
+    # 提取 payload（实际收到的）
     payload = data[10:10 + payload_len]
 
-    # 期望的总长度
+    # 期望的总长度（实际收到的）
     expected_len = HEADER_SIZE + payload_len + CRC_SIZE + END_SIZE
     if len(data) < expected_len:
         raise FrameError(f"帧长度不足: {len(data)} < {expected_len}")

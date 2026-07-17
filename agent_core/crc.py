@@ -9,6 +9,7 @@ CRC32 校验 — 符合文档第 3 节规范
 
 import binascii
 
+#最基础的crc算法，实现校验功能
 def crc32(data: bytes) -> int:
     """
     计算 ISO-HDLC CRC32，返回 32 位无符号整数。
@@ -16,12 +17,14 @@ def crc32(data: bytes) -> int:
     """
     return binascii.crc32(data) & 0xFFFFFFFF
 
+#封装用于写入帧
 def crc32_bytes(data: bytes) -> bytes:
     """
     返回 4 字节大端序 CRC32，用于写入帧。
     """
     return crc32(data).to_bytes(4, 'big')
 
+#判定是否符合crc
 def verify_crc(data: bytes, expected: int) -> bool:
     """
     校验 data 的 CRC32 是否等于 expected。
