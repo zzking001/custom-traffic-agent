@@ -39,6 +39,35 @@ DATA_MAGIC = b"CTFG"
 DATA_VERSION = 0x01
 DATA_HEADER_LEN = 40
 
+# ── 动作码 & 状态码常量 (§4.2/§4.3, 2025-07-17 新增) ────
+
+# 动作码 (§4.2)
+ACTION_START           = 0x01  # 管理端→代理端: 启动任务
+ACTION_STOP            = 0x02  # 管理端→代理端: 停止任务
+ACTION_QUERY           = 0x03  # 管理端→代理端: 查询状态
+ACTION_CLEAR           = 0x04  # 管理端→代理端: 清除历史结果
+ACTION_CAPABILITY      = 0x05  # 管理端→代理端: 查询能力
+ACTION_EVENT_COMPLETED = 0x81  # 代理端→管理端: 任务完成事件
+ACTION_EVENT_FAILED    = 0x82  # 代理端→管理端: 任务失败事件
+
+# 状态码 (§4.3)
+STATUS_OK             = 0x00  # 成功
+STATUS_ACCEPTED       = 0x01  # 配置校验通过，已入队
+STATUS_BUSY           = 0x02  # 已有任务在执行
+STATUS_INVALID_FRAME  = 0x03  # 帧格式错误
+STATUS_INVALID_JSON   = 0x04  # 预留: JSON 解析错误
+STATUS_INVALID_CONFIG = 0x05  # 配置字段不合法
+STATUS_TASK_NOT_FOUND = 0x06  # 未找到指定 task_id
+STATUS_INTERNAL_ERROR = 0x07  # 内部异常
+STATUS_STOP_REQUESTED = 0x08  # 停止请求已受理
+
+# 业务类型编码 (§9, 2025-07-17 新增)
+BUSINESS_MGMT       = 0x01  # management: 设备配置、状态上报
+BUSINESS_CONTROL    = 0x02  # control: 控制命令、链路调度
+BUSINESS_APP        = 0x03  # application: 结构化应用数据
+BUSINESS_MULTIMEDIA = 0x04  # multimedia: 连续多媒体数据
+BUSINESS_CUSTOM     = 0xFF  # custom: 自定义
+
 # 打包控制帧（不含可选 0xAA 前导）
 def pack_frame(action: int, flags: int, task_id: int,
                payload: bytes = b"") -> bytes:
@@ -150,11 +179,12 @@ def pack_data_header(
     send_timestamp_ns: int = 0,
     payload_len: int = 0,
     pcp: int = 0,
-    business_code: int = 0xFF,
+    business_code: int = BUSINESS_CUSTOM,
     enable_timestamp: bool = True,
+    payload: bytes = b"",  # [2025-07-17 新增] 载荷，用于 CRC 计算 (§9)
 ) -> bytes:
     """
-    打包 40 字节测试数据头。
+    打包 40 字节测试数据头。CRC32 覆盖前 36 字节 + 载荷 (§9)。
 
     参数:
         task_id:          任务标识
@@ -163,13 +193,14 @@ def pack_data_header(
         send_timestamp_ns: 发送端 Unix 纳秒时间戳
         payload_len:      测试载荷长度
         pcp:              PCP 值 0~7
-        business_code:    业务编码 (0x01管理/0x02控制/0x03应用/0x04多媒体/0xFF自定义)
+        business_code:    业务编码 (BUSINESS_MGMT/CONTROL/APP/MULTIMEDIA/CUSTOM)
         enable_timestamp: 是否携带有效时间戳 (影响 flags bit0)
+        payload:          测试载荷 bytes [2025-07-17 新增]
     """
     flags = 0x0001 if enable_timestamp else 0x0000
 
     # 前 36 字节（不含 4 字节 CRC）
-    header = struct.pack(
+    header_data = struct.pack(
         "!4s B B H I H B B Q Q H H",
         DATA_MAGIC,         # 4B: "CTFG"
         DATA_VERSION,       # 1B: version
@@ -185,9 +216,9 @@ def pack_data_header(
         0,                  # 2B: reserved
     )
 
-    # CRC32: 对前 36 字节 + 载荷计算
-    crc = crc32_bytes(header)  # 此时还没载荷，只校验头
-    return header + crc
+    # CRC32: 对前 36 字节 + 载荷计算 (§9) [2025-07-17 修正]
+    crc = crc32_bytes(header_data + payload)
+    return header_data + crc
 
 def unpack_data_header(data: bytes) -> dict:
     """
@@ -224,10 +255,11 @@ def unpack_data_header(data: bytes) -> dict:
 
     has_timestamp = bool(flags & 0x0001)
 
-    # CRC32: 对前 36 字节校验
+    # CRC32: 对前 36 字节 + 载荷校验 (§9) [2025-07-17 修正]
     header_data = data[:36]
+    payload_bytes = data[40:]  # 载荷从第 40 字节开始
     expected_crc = int.from_bytes(crc_received, 'big')
-    crc_valid = verify_crc(header_data, expected_crc)
+    crc_valid = verify_crc(header_data + payload_bytes, expected_crc)
 
     return {
         "magic": magic,

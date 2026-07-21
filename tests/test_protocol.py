@@ -165,6 +165,8 @@ from agent_core.protocol import (
     unpack_data_header,
     DATA_MAGIC,
     DATA_HEADER_LEN,
+    BUSINESS_MGMT,
+    BUSINESS_APP,
 )
 
 def test_pack_data_header():
@@ -175,13 +177,14 @@ def test_pack_data_header():
         sequence=0,
         payload_len=100,
         pcp=7,
-        business_code=0x01,
+        business_code=BUSINESS_MGMT,
     )
     assert len(header) == DATA_HEADER_LEN
     assert header[:4] == DATA_MAGIC
 
+
 def test_unpack_data_header_roundtrip():
-    """数据头打包解包往返"""
+    """数据头打包解包往返（无载荷）"""
     original = pack_data_header(
         task_id=42,
         flow_id=201,
@@ -189,7 +192,7 @@ def test_unpack_data_header_roundtrip():
         send_timestamp_ns=1234567890,
         payload_len=500,
         pcp=4,
-        business_code=0x03,
+        business_code=BUSINESS_APP,
         enable_timestamp=True,
     )
     result = unpack_data_header(original)
@@ -200,9 +203,41 @@ def test_unpack_data_header_roundtrip():
     assert result["send_timestamp_ns"] == 1234567890
     assert result["payload_len"] == 500
     assert result["pcp"] == 4
-    assert result["business_code"] == 0x03
+    assert result["business_code"] == BUSINESS_APP
     assert result["has_timestamp"] is True
     assert result["crc_valid"] is True
+
+
+def test_data_header_with_payload_crc():
+    """[2025-07-17 新增] CRC 覆盖头+载荷，往返验证"""
+    payload_data = b"\x01\x02\x03\x04\x05"
+    header = pack_data_header(
+        task_id=42,
+        flow_id=1,
+        sequence=0,
+        payload_len=len(payload_data),
+        payload=payload_data,  # 传入载荷参与 CRC
+    )
+    # 拼成完整报文：40 字节头 + 载荷
+    full_packet = header + payload_data
+    result = unpack_data_header(full_packet)
+    assert result["crc_valid"] is True
+
+
+def test_data_header_payload_crc_tamper():
+    """[2025-07-17 新增] 篡改载荷后 CRC 失效"""
+    payload_data = b"\x01\x02\x03\x04\x05"
+    header = pack_data_header(
+        task_id=1,
+        flow_id=1,
+        sequence=0,
+        payload_len=len(payload_data),
+        payload=payload_data,
+    )
+    full_packet = bytearray(header + payload_data)
+    full_packet[41] ^= 0xFF  # 篡改载荷第一个字节
+    result = unpack_data_header(bytes(full_packet))
+    assert result["crc_valid"] is False
 
 def test_data_header_no_timestamp():
     """不启用时延统计"""
